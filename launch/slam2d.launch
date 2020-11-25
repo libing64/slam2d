@@ -1,0 +1,6 @@
+<launch>
+  <node pkg="slam2d" name="slam2d" type="slam2d_node" output="screen">
+    <remap from="/multiecho_scan" to="/horizontal_laser_2d"/>
+  </node>
+
+</launch>
