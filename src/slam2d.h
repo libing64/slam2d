@@ -195,6 +195,7 @@ void slam2d::update(const sensor_msgs::MultiEchoLaserScanConstPtr &msg)
     if (scan.points.size() && scan_prev.points.size())
     {
         scan_match();
+        update_transform();
     }
 
     if (scan.points.size())
