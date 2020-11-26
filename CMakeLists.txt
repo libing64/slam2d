@@ -161,7 +161,7 @@ include_directories(
 # )
 
 add_executable(slam2d_node  src/slam2d_node.cpp)
-target_link_libraries(slam2d_node ${catkin_LIBRARIES} ${CERES_LIBRARIES})
+target_link_libraries(slam2d_node ${catkin_LIBRARIES} ${CERES_LIBRARIES} ${PCL_LIBRARIES})
 
 #############
 ## Install ##

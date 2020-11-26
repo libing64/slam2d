@@ -3,4 +3,5 @@
     <remap from="/multiecho_scan" to="/horizontal_laser_2d"/>
   </node>
 
+  <!-- <node pkg="rosbag" type="play" name="rosbag" args="" /> -->
 </launch>

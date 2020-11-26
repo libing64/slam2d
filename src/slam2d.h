@@ -148,11 +148,35 @@ void slam2d::scan_match()
                                          pose);
             }
         }
+
+        ceres::Solver::Options options;
+        options.linear_solver_type = ceres::DENSE_SCHUR;
+        options.minimizer_progress_to_stdout = false;
+
+        ceres::Solver::Summary summary;
+        ceres::Solve(options, &problem, &summary);
+        std::cout << summary.FullReport() << "\n";
+
+        printf("result: %lf, %lf, %lf\n", pose[0], pose[1], pose[2]);
+
+        delta.x = pose[0];
+        delta.y = pose[1];
+        delta.theta = pose[2];
     }
 }
 void slam2d::update(const sensor_msgs::MultiEchoLaserScanConstPtr &msg)
 {
     readin_scan_data(msg);
+
+    if (scan.points.size() && scan_prev.points.size())
+    {
+        scan_match();
+    }
+
+    if (scan.points.size())
+    {
+        scan_prev = scan;
+    }
 }
 
 void slam2d::update(const sensor_msgs::LaserScanConstPtr &msg)
