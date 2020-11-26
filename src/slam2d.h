@@ -22,9 +22,9 @@ typedef pcl::PointXY PointType;
 
 typedef struct
 {
-    float x;
-    float y;
-    float theta;
+    double theta;
+    Eigen::Vector2d t;
+
 } state2d;
 
 Eigen::Vector2d point2eigen(PointType p)
@@ -52,6 +52,7 @@ public:
     ~slam2d();
     state2d state;
     state2d delta;
+    double timestamp;
     pcl::PointCloud<PointType> scan;
     pcl::PointCloud<PointType> scan_prev;
 
@@ -64,6 +65,7 @@ public:
     void scan_match();
     void update(const sensor_msgs::MultiEchoLaserScanConstPtr& msg);
     void update(const sensor_msgs::LaserScanConstPtr &msg);
+    void update_transform();
 };
 
 slam2d::slam2d(/* args */)
@@ -76,6 +78,7 @@ slam2d::~slam2d()
 
 void slam2d::readin_scan_data(const sensor_msgs::MultiEchoLaserScanConstPtr &msg)
 {
+    timestamp = msg->header.stamp.toSec();
     scan.points.resize(msg->ranges.size());
     for (auto i = 0; i < msg->ranges.size(); i++)
     {
@@ -129,7 +132,7 @@ void slam2d::scan_match()
         Eigen::Matrix2d R;
         R(0, 0) = cos(delta.theta); R(0, 1) = -sin(delta.theta);
         R(1, 0) = sin(delta.theta); R(1, 1) = cos(delta.theta);
-        Eigen::Vector2d dt(delta.x, delta.y);
+        Eigen::Vector2d dt = delta.t;
         //find nearest neighur
         for (int i = 0; i < scan_prev.points.size(); i++)
         {
@@ -159,11 +162,32 @@ void slam2d::scan_match()
 
         printf("result: %lf, %lf, %lf\n", pose[0], pose[1], pose[2]);
 
-        delta.x = pose[0];
-        delta.y = pose[1];
-        delta.theta = pose[2];
+        delta.theta = pose[0];
+        delta.t(0) = pose[1];
+        delta.t(1) = pose[2];
+
     }
 }
+
+void slam2d::update_transform()
+{
+
+    Eigen::Matrix2d dR;
+    dR(0, 0) = cos(delta.theta); dR(0, 1) = -sin(delta.theta);
+    dR(1, 0) = sin(delta.theta); dR(1, 1) = cos(delta.theta);
+
+
+    Eigen::Vector2d dt_inv = -dR.transpose() * delta.t;
+    Eigen::Matrix2d dR_inv = dR.transpose();
+    
+
+    Eigen::Matrix2d R;
+    R(0, 0) = cos(state.theta); R(0, 1) = -sin(state.theta);
+    R(1, 0) = sin(state.theta); R(1, 1) =  cos(state.theta);
+    state.theta += (-delta.theta);
+    state.t += R * dt_inv;
+}
+
 void slam2d::update(const sensor_msgs::MultiEchoLaserScanConstPtr &msg)
 {
     readin_scan_data(msg);

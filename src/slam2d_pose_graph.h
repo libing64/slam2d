@@ -31,20 +31,20 @@ struct lidar_edge_error
                     T *residuals) const
     {
         // pose 0 
-        T pi[3];
+        T pi[2];
         pi[0] = T(p(0));
         pi[1] = T(p(1));
 
         T R[2][2];
-        R[0][0] = cos(pose[2]); R[0][1] = -sin(pose[2]); 
-        R[1][0] = sin(pose[2]); R[1][1] =  cos(pose[2]); 
+        R[0][0] = cos(pose[0]); R[0][1] = -sin(pose[0]); 
+        R[1][0] = sin(pose[0]); R[1][1] =  cos(pose[0]); 
         T pi_proj[2];//project pi to current frame
 
         pi_proj[0] = R[0][0] * pi[0] + R[0][1] * pi[1];
         pi_proj[1] = R[1][0] * pi[0] + R[1][1] * pi[1];
         // pose[3,4,5] are the translation.
-        pi_proj[0] += pose[0];
-        pi_proj[1] += pose[1];
+        pi_proj[0] += pose[1];
+        pi_proj[1] += pose[2];
 
         //distance between pi_proj to line(p1, p2)
         T d1[2], d12[2];
