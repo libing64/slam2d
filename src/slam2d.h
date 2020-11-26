@@ -1,5 +1,6 @@
 #ifndef __SLAM2D_H
 #define __SLAM2D_H
+#include "slam2d_pose_graph.h"
 
 #include <iostream>
 #include <Eigen/Eigen>
@@ -11,6 +12,7 @@
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/visualization/cloud_viewer.h>
+
 
 using namespace std;
 using namespace Eigen;
@@ -111,13 +113,11 @@ void slam2d::update_scan_normal()
 }
 void slam2d::scan_match()
 {
-    state2d delta;
-    delta.x = 0;
-    delta.y = 0;
-    delta.theta = 0;
-
+    double pose[3] = {0};
     if (scan.points.size() && scan_prev.points.size())
     {
+
+        Problem problem;
         //solve delta with ceres constraints
         pcl::KdTreeFLANN<PointType> kdtree;
         kdtree.setInputCloud(scan.makeShared());
@@ -139,9 +139,9 @@ void slam2d::scan_match()
             if (kdtree.nearestKSearch(search_point_predict, K, index, distance) == K)
             {
                 //add constraints
-                Eigen::Vector3d p = point2eigen(search_point);
-                Eigen::Vector3d p1 = point2eigen(scan.points[index[0]]);
-                Eigen::Vector3d p2 = point2eigen(scan.points[index[1]]);
+                Eigen::Vector2d p = point2eigen(search_point);
+                Eigen::Vector2d p1 = point2eigen(scan.points[index[0]]);
+                Eigen::Vector2d p2 = point2eigen(scan.points[index[1]]);
                 ceres::CostFunction *cost_function = lidar_edge_error::Create(p, p1, p2);
                 problem.AddResidualBlock(cost_function,
                                          new CauchyLoss(0.5),
