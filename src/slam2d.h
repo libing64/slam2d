@@ -13,10 +13,12 @@
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/visualization/cloud_viewer.h>
+#include <opencv2/opencv.hpp>
 
 
 using namespace std;
 using namespace Eigen;
+using namespace cv;
 
 
 typedef pcl::PointXY PointType;
@@ -55,6 +57,7 @@ public:
     state2d delta;
     double timestamp;
     nav_msgs::OccupancyGrid map2d;
+    Mat cvmap2d;
 
     pcl::PointCloud<PointType> scan;
     pcl::PointCloud<PointType> scan_prev;
@@ -70,6 +73,7 @@ public:
     void update(const sensor_msgs::LaserScanConstPtr &msg);
     void update_transform();
     void update_map();
+    void cvmap2map();//convert cv map to map
 };
 
 slam2d::slam2d()
@@ -95,6 +99,15 @@ slam2d::slam2d()
             map2d.data[i * map2d.info.width + j] = -1;
         }
     }
+
+    cvmap2d = Mat(map2d.info.width, map2d.info.height, CV_8SC1, -1);
+    // for (int i = 0; i < cvmap2d.rows; i++)
+    // {
+    //     for(int j = 0; j < cvmap2d.cols; j++)
+    //     {
+    //         cvmap2d.data
+    //     }
+    // }
 }
 
 slam2d::~slam2d()
@@ -221,6 +234,7 @@ void slam2d::update(const sensor_msgs::MultiEchoLaserScanConstPtr &msg)
     {
         scan_match();
         update_transform();
+        update_map();
     }
 
     if (scan.points.size())
@@ -237,6 +251,28 @@ void slam2d::update(const sensor_msgs::LaserScanConstPtr &msg)
 void slam2d::update_map()
 {
     //update map with scan and state
+    cv::Point2f origin(state.t(0), state.t(1));
+    Eigen::Matrix2d R;
+    R(0, 0) = cos(state.theta); R(0, 1) = -sin(state.theta);
+    R(1, 0) = sin(state.theta); R(1, 1) =  cos(state.theta);
+    for (int i = 0; i < scan.points.size(); i++)
+    {
+        PointType p = scan.points[i];
+        Eigen::Vector2d pp = R * point2eigen(p) + state.t;
+        cv:Point2f ppp(pp(0), pp(1));
+        cv::line(cvmap2d, origin, ppp, 1, 8, 0);
+    }
+    cvmap2map();
+}
 
+void slam2d::cvmap2map()
+{
+    for (int i = 0; i < cvmap2d.rows; i++)
+    {
+        for(int j = 0; j < cvmap2d.cols; j++)
+        {
+            map2d.data[i * map2d.info.width + j] = cvmap2d.at<int8_t>(i, j);
+        }
+    }
 }
 #endif

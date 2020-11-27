@@ -14,12 +14,16 @@
 slam2d slam;
 ros::Publisher pub_pose, pub_path;
 ros::Publisher pub_laserscan;
+ros::Publisher pub_map2d;
 void publish_pose(slam2d &slam);
+void publish_map2d(slam2d &slam);
+
 
 void multiecho_laserscan_callback(const sensor_msgs::MultiEchoLaserScanConstPtr &msg)
 {
     slam.update(msg);
     publish_pose(slam);
+    publish_map2d(slam);
 
     //publish laserscan
     sensor_msgs::LaserScan laserscan;
@@ -40,6 +44,11 @@ void multiecho_laserscan_callback(const sensor_msgs::MultiEchoLaserScanConstPtr 
         laserscan.intensities[i] = msg->intensities[i].echoes[0];
     }
     pub_laserscan.publish(laserscan);
+}
+
+void publish_map2d(slam2d &slam)
+{
+    pub_map2d.publish(slam.map2d);
 }
 
 void publish_pose(slam2d &slam)
@@ -98,7 +107,7 @@ int main(int argc, char **argv)
     pub_laserscan = nh.advertise<sensor_msgs::LaserScan>("/laserscan", 100);
     pub_pose = nh.advertise<geometry_msgs::PoseStamped>("/est_pose", 10);
     pub_path = nh.advertise<nav_msgs::Path>("/path", 10);
-
+    pub_map2d = nh.advertise<nav_msgs::OccupancyGrid>("/map", 10);
     ros::spin();
     return 0;
 }

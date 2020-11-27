@@ -25,6 +25,7 @@ find_package(catkin REQUIRED COMPONENTS
 find_package(Eigen3)
 find_package(Ceres)
 find_package(PCL)
+find_package(OpenCV REQUIRED)
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
 ## See http://ros.org/doc/api/catkin/html/user_guide/setup_dot_py.html
@@ -129,6 +130,7 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIR}
+  ${OpenCV_INCLUDE_DIRS}
 )
 
 ## Declare a C++ library
@@ -162,7 +164,7 @@ include_directories(
 # )
 
 add_executable(slam2d_node  src/slam2d_node.cpp)
-target_link_libraries(slam2d_node ${catkin_LIBRARIES} ${CERES_LIBRARIES} ${PCL_LIBRARIES})
+target_link_libraries(slam2d_node ${catkin_LIBRARIES} ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS})
 
 #############
 ## Install ##
