@@ -29,12 +29,15 @@ void multiecho_laserscan_callback(const sensor_msgs::MultiEchoLaserScanConstPtr 
     laserscan.angle_max = msg->angle_max;
     laserscan.angle_increment = msg->angle_increment;
     laserscan.time_increment = msg->time_increment;
+    laserscan.scan_time = msg->scan_time;
     laserscan.range_min = msg->range_min;
-    laserscan.range_max = msg->range_min;
+    laserscan.range_max = msg->range_max;
     laserscan.ranges.resize(msg->ranges.size());
+    laserscan.intensities.resize(msg->ranges.size());
     for (auto i = 0; i < msg->ranges.size(); i++)
     {
         laserscan.ranges[i] = msg->ranges[i].echoes[0];
+        laserscan.intensities[i] = msg->intensities[i].echoes[0];
     }
     pub_laserscan.publish(laserscan);
 }
