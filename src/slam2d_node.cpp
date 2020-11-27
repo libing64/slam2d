@@ -13,12 +13,25 @@
 
 slam2d slam;
 ros::Publisher pub_pose, pub_path;
+ros::Publisher pub_laserscan;
 void publish_pose(slam2d &slam);
 
 void multiecho_laserscan_callback(const sensor_msgs::MultiEchoLaserScanConstPtr &msg)
 {
     slam.update(msg);
     publish_pose(slam);
+
+    //publish laserscan
+    sensor_msgs::LaserScan laserscan;
+    laserscan.header.stamp = msg->header.stamp;
+    laserscan.header.frame_id = "laser_frame";
+    laserscan.angle_min = msg->angle_min;
+    laserscan.angle_max = msg->angle_max;
+    laserscan.angle_increment = msg->angle_increment;
+    laserscan.time_increment = msg->time_increment;
+    laserscan.range_min = msg->range_min;
+    laserscan.range_max = msg->range_min;
+    pub_laserscan.publish(laserscan);
 }
 
 void publish_pose(slam2d &slam)
@@ -74,6 +87,7 @@ int main(int argc, char **argv)
     ros::Subscriber sub_multiecho_laserscan = nh.subscribe<sensor_msgs::MultiEchoLaserScan>("/multiecho_scan", 100, multiecho_laserscan_callback);
     ros::Subscriber sub_laserscan = nh.subscribe<sensor_msgs::LaserScan>("/scan", 100, laserscan_callback);
 
+    ros::Publisher pub_laserscan = nh.advertise<sensor_msgs::LaserScan>("/laserscan", 100);
     pub_pose = nh.advertise<geometry_msgs::PoseStamped>("/est_pose", 10);
     pub_path = nh.advertise<nav_msgs::Path>("/path", 10);
 
