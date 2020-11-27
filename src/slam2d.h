@@ -6,6 +6,7 @@
 #include <Eigen/Eigen>
 #include <sensor_msgs/MultiEchoLaserScan.h>
 #include <sensor_msgs/LaserScan.h>
+#include <nav_msgs/OccupancyGrid.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/filters/voxel_grid.h>
@@ -53,6 +54,8 @@ public:
     state2d state;
     state2d delta;
     double timestamp;
+    nav_msgs::OccupancyGrid map2d;
+
     pcl::PointCloud<PointType> scan;
     pcl::PointCloud<PointType> scan_prev;
 
@@ -66,10 +69,32 @@ public:
     void update(const sensor_msgs::MultiEchoLaserScanConstPtr& msg);
     void update(const sensor_msgs::LaserScanConstPtr &msg);
     void update_transform();
+    void update_map();
 };
 
-slam2d::slam2d(/* args */)
+slam2d::slam2d()
 {
+    state.t = Vector2d::Zero();
+    state.theta = 0;
+    map2d.header.frame_id = "map";
+    map2d.info.width = 1000;
+    map2d.info.height = 1000;
+    map2d.info.resolution = 0.05;
+    map2d.info.origin.orientation.w = 1;
+    map2d.info.origin.orientation.x = 0;
+    map2d.info.origin.orientation.y = 0;
+    map2d.info.origin.orientation.z = 0;
+    map2d.info.origin.position.x = 0;
+    map2d.info.origin.position.x = 0;
+    map2d.info.origin.position.x = 0;
+    map2d.data.resize(map2d.info.width * map2d.info.height);
+    for (auto i = 0; i < map2d.info.height; i++)
+    {
+        for(auto j = 0; j < map2d.info.width; j++)
+        {
+            map2d.data[i * map2d.info.width + j] = -1;
+        }
+    }
 }
 
 slam2d::~slam2d()
@@ -207,5 +232,11 @@ void slam2d::update(const sensor_msgs::MultiEchoLaserScanConstPtr &msg)
 void slam2d::update(const sensor_msgs::LaserScanConstPtr &msg)
 {
     readin_scan_data(msg);
+}
+
+void slam2d::update_map()
+{
+    //update map with scan and state
+
 }
 #endif
