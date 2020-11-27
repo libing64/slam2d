@@ -24,7 +24,7 @@ void multiecho_laserscan_callback(const sensor_msgs::MultiEchoLaserScanConstPtr 
     //publish laserscan
     sensor_msgs::LaserScan laserscan;
     laserscan.header.stamp = msg->header.stamp;
-    laserscan.header.frame_id = "laser_frame";
+    laserscan.header.frame_id = "base_link";
     laserscan.angle_min = msg->angle_min;
     laserscan.angle_max = msg->angle_max;
     laserscan.angle_increment = msg->angle_increment;
@@ -66,7 +66,7 @@ void publish_pose(slam2d &slam)
     static tf2_ros::TransformBroadcaster br;
     geometry_msgs::TransformStamped tr;
     tr.header.stamp = ros::Time(slam.timestamp);
-    tr.header.frame_id = "world";
+    tr.header.frame_id = "odom";
     tr.child_frame_id = "base_link";
     tr.transform.translation.x = slam.state.t(0);
     tr.transform.translation.y = slam.state.t(1);
