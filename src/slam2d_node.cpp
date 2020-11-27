@@ -31,6 +31,11 @@ void multiecho_laserscan_callback(const sensor_msgs::MultiEchoLaserScanConstPtr 
     laserscan.time_increment = msg->time_increment;
     laserscan.range_min = msg->range_min;
     laserscan.range_max = msg->range_min;
+    laserscan.ranges.resize(msg->ranges.size());
+    for (auto i = 0; i < msg->ranges.size(); i++)
+    {
+        laserscan.ranges[i] = msg->ranges[i].echoes[0];
+    }
     pub_laserscan.publish(laserscan);
 }
 
@@ -87,7 +92,7 @@ int main(int argc, char **argv)
     ros::Subscriber sub_multiecho_laserscan = nh.subscribe<sensor_msgs::MultiEchoLaserScan>("/multiecho_scan", 100, multiecho_laserscan_callback);
     ros::Subscriber sub_laserscan = nh.subscribe<sensor_msgs::LaserScan>("/scan", 100, laserscan_callback);
 
-    ros::Publisher pub_laserscan = nh.advertise<sensor_msgs::LaserScan>("/laserscan", 100);
+    pub_laserscan = nh.advertise<sensor_msgs::LaserScan>("/laserscan", 100);
     pub_pose = nh.advertise<geometry_msgs::PoseStamped>("/est_pose", 10);
     pub_path = nh.advertise<nav_msgs::Path>("/path", 10);
 
