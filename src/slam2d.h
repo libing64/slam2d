@@ -69,8 +69,13 @@ public:
     void readin_scan_data(const sensor_msgs::MultiEchoLaserScanConstPtr &msg);
     void readin_scan_data(const sensor_msgs::LaserScanConstPtr &msg);
 
+    Vector2d world2map(Vector2d p);
+    cv::Point2f world2map(cv::Point2f p);
+
     void update_scan_normal();
     void scan_match();
+    void scan_map_match();
+    VectorXd scan_map_match_cost(Vector3d pose);
     void update();
     void update_transform();
     void update_map();
@@ -132,6 +137,24 @@ void slam2d::readin_scan_data(const sensor_msgs::LaserScanConstPtr &msg)
     scan.is_dense = true;
 }
 
+cv::Point2f slam2d::world2map(cv::Point2f p)
+{
+    cv::Point2f m;
+    m.x = p.x / map2d.info.resolution;
+    m.y = p.y / map2d.info.resolution;
+    m.x += map2d.info.width * 0.5;
+    m.y += map2d.info.height * 0.5;
+    return m;
+}
+
+Vector2d slam2d::world2map(Vector2d p)
+{
+    Vector2d m;
+    m = p / map2d.info.resolution;
+    m(0) += map2d.info.width * 0.5;
+    m(1) += map2d.info.height * 0.5;
+    return m;
+}
 void slam2d::update_scan_normal()
 {
     //compute normal of scan
@@ -203,6 +226,68 @@ void slam2d::scan_match()
     }
 }
 
+VectorXd slam2d::scan_map_match_cost(Vector3d pose)
+{
+    VectorXd residual = VectorXd::Zero(scan.points.size());
+    Eigen::Matrix2d R;
+    R(0, 0) = cos(state.theta); R(0, 1) = -sin(state.theta);
+    R(1, 0) = sin(state.theta); R(1, 1) =  cos(state.theta);
+    //printf("cols: %d, rows: %d\n", cvmap2d.cols, cvmap2d.rows);
+    for (int i = 0; i < scan.points.size(); i++)
+    {
+        Vector2d p = point2eigen(scan.points[i]);
+        Vector2d pp = world2map(R * p + state.t);
+        //cout << "pp: " << pp.transpose() << endl;
+        if ((pp(0) <= 0) || (pp(0) >= cvmap2d.cols) || (pp(1) <= 0) || (pp(1) >= cvmap2d.rows))
+        {
+            residual[i] = 0;
+            //printf("res:%f\n", residual[i]);
+        } else 
+        {
+            //get value from map
+            double x = pp(0);
+            double y = pp(1);
+            int x2 = ceil(x);
+            int x1 = x2 - 1;
+            int y2 = ceil(y);
+            int y1 = y2 - 1;
+            float p11 = cvmap2d.at<int8_t>(y1 * cvmap2d.cols + x1);
+            float p12 = cvmap2d.at<int8_t>(y1 * cvmap2d.cols + x2);
+            float p21 = cvmap2d.at<int8_t>(y2 * cvmap2d.cols + x1);
+            float p22 = cvmap2d.at<int8_t>(y2 * cvmap2d.cols + x2);
+            float p1 = (x - x1) * p12 + (x2 - x) * p11;
+            float p2 = (x - x1) * p22 + (x2 - x) * p21;
+            float ppp = (y - y1) * p2 + (y2 - y) * p1;
+            residual[i] = 100 - ppp;
+            //printf("i: %d, res:%f\n", i, residual[i]);
+        }
+    }
+    return residual;
+}
+
+void slam2d::scan_map_match()
+{
+    float eps = 1e-2;
+    Vector3d pose(state.theta, state.t(0), state.t(1));
+    VectorXd r = scan_map_match_cost(pose);
+    MatrixXd H = MatrixXd::Zero(scan.points.size(), 3);
+    for(int i = 0; i < 3; i++)
+    {
+        Vector3d pose1 = pose;
+        pose1(i) += eps;
+        VectorXd r1 = scan_map_match_cost(pose1);
+        Vector3d pose2 = pose;
+        pose2(i) -= eps;
+        VectorXd r2 = scan_map_match_cost(pose2);
+        H.col(i) = (r1 - r2 ) / (2 * eps);
+        //cout << "r1: " << r1.transpose() << endl;
+        //cout << "r2: " << r2.transpose() << endl;
+    }
+    cout << "H: " << H.transpose() << endl;
+    Vector3d dx = (H.transpose() * H).ldlt().solve(H.transpose() * r);
+    cout << "dx: " << dx.transpose() << endl;
+}
+
 void slam2d::update_transform()
 {
 
@@ -229,11 +314,8 @@ void slam2d::update()
     {
         scan_match();
         update_transform();
-        if (cnt % 10 == 0)
-        {
-            update_map();
-        }
-
+        //scan_map_match();
+        update_map();
     }
 
     if (scan.points.size())
@@ -246,9 +328,10 @@ void slam2d::update()
 void slam2d::update_map()
 {
     //update map with scan and state
-    int offsetx = cvmap2d.cols / 2;
-    int offsety = cvmap2d.rows / 2;
-    cv::Point2f origin(state.t(0) / map2d.info.resolution + offsetx, state.t(1) / map2d.info.resolution + offsety);
+    cv::Point2f tt;
+    tt.x = state.t(0);
+    tt.y = state.t(1);
+    cv::Point2f origin = world2map(tt);
     Eigen::Matrix2d R;
     R(0, 0) = cos(state.theta); R(0, 1) = -sin(state.theta);
     R(1, 0) = sin(state.theta); R(1, 1) =  cos(state.theta);
@@ -256,9 +339,9 @@ void slam2d::update_map()
     {
         PointType p = scan.points[i];
         float dist = sqrtf(p.x * p.x + p.y * p.y);
-        if (dist > 10) continue;
-        Eigen::Vector2d pp = R * point2eigen(p) + state.t;
-        cv:Point2f ppp(pp(0)/ map2d.info.resolution + offsetx, pp(1)/ map2d.info.resolution + offsety);
+        if (dist > 30) continue;
+        Eigen::Vector2d pp = world2map(R * point2eigen(p) + state.t);
+        cv:Point2f ppp(pp(0), pp(1));
         
         cv::line(cvmap2d, origin, ppp, 100, 1, 4, 0);
         cv::circle(cvmap2d, ppp, 1, 0, 1, 4, 0);

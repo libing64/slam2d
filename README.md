@@ -61,3 +61,6 @@ https://google-cartographer-ros.readthedocs.io/en/latest/data.html
 * An ICP variant using a point-to-line metric
 * A flexible and Scalable SLAM System with Full 3D motion Estimation
 * Real-Time Loop Closure in 2D LIDAR SLAM
+
+# 5. Problem
+## 5.1 scan to map align or local map to map align not work
