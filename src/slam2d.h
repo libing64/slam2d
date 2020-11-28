@@ -63,6 +63,8 @@ public:
     pcl::PointCloud<PointType> scan_prev;
 
     pcl::PointCloud<PointType> scan_normal;
+    bool cvmap_vis_enable = false;
+
 
     void readin_scan_data(const sensor_msgs::MultiEchoLaserScanConstPtr &msg);
     void readin_scan_data(const sensor_msgs::LaserScanConstPtr &msg);
@@ -81,8 +83,8 @@ slam2d::slam2d()
     state.t = Vector2d::Zero();
     state.theta = 0;
     map2d.header.frame_id = "odom";
-    map2d.info.width = 500;
-    map2d.info.height = 500;
+    map2d.info.width = 2000;
+    map2d.info.height = 2000;
     map2d.info.resolution = 0.1;
     map2d.info.origin.orientation.w = 1;
     map2d.info.origin.orientation.x = 0;
@@ -266,9 +268,8 @@ void slam2d::update_map()
         Eigen::Vector2d pp = R * point2eigen(p) + state.t;
         cv:Point2f ppp(pp(0)/ map2d.info.resolution + offsetx, pp(1)/ map2d.info.resolution + offsety);
         
-        //cout << "p: " << ppp << endl;
-        cv::line(cvmap2d, origin, ppp, 100, 1, 8, 0);
-        cv::circle(cvmap2d, ppp, 1, 0, 1, 8, 0);
+        cv::line(cvmap2d, origin, ppp, 100, 1, 4, 0);
+        cv::circle(cvmap2d, ppp, 1, 0, 1, 4, 0);
     }
     cvmap2map();
 }
@@ -282,15 +283,10 @@ void slam2d::cvmap2map()
             map2d.data[i * map2d.info.width + j] = cvmap2d.at<int8_t>(i, j);
         }
     }
-    imshow("cvmap2d", cvmap2d);
-    waitKey(2);
-
-    // for (int i = 0; i < cvmap2d.rows; i++)
-    // {
-    //     for (int j = 0; j < cvmap2d.cols; j++)
-    //     {
-    //         map2d.data[i * map2d.info.width + j] = i % 100;
-    //     }
-    // }
+    if (cvmap_vis_enable)
+    {
+        imshow("cvmap2d", cvmap2d);
+        waitKey(2);
+    }
 }
 #endif
