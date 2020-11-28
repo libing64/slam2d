@@ -80,7 +80,7 @@ slam2d::slam2d()
 {
     state.t = Vector2d::Zero();
     state.theta = 0;
-    map2d.header.frame_id = "map";
+    map2d.header.frame_id = "odom";
     map2d.info.width = 1000;
     map2d.info.height = 1000;
     map2d.info.resolution = 0.05;
@@ -88,9 +88,9 @@ slam2d::slam2d()
     map2d.info.origin.orientation.x = 0;
     map2d.info.origin.orientation.y = 0;
     map2d.info.origin.orientation.z = 0;
-    map2d.info.origin.position.x = 0;
-    map2d.info.origin.position.x = 0;
-    map2d.info.origin.position.x = 0;
+    map2d.info.origin.position.x = map2d.info.width /  2;
+    map2d.info.origin.position.y = map2d.info.height / 2;
+    map2d.info.origin.position.z = 0;
     map2d.data.resize(map2d.info.width * map2d.info.height);
     for (auto i = 0; i < map2d.info.height; i++)
     {
@@ -251,7 +251,8 @@ void slam2d::update(const sensor_msgs::LaserScanConstPtr &msg)
 void slam2d::update_map()
 {
     //update map with scan and state
-    cv::Point2f origin(state.t(0), state.t(1));
+    cv::Point2f origin(state.t(0) / map2d.info.resolution + map2d.info.origin.position.x, state.t(1) / map2d.info.resolution + map2d.info.origin.position.y);
+    cout << "origin: " << origin << endl;
     Eigen::Matrix2d R;
     R(0, 0) = cos(state.theta); R(0, 1) = -sin(state.theta);
     R(1, 0) = sin(state.theta); R(1, 1) =  cos(state.theta);
@@ -259,8 +260,10 @@ void slam2d::update_map()
     {
         PointType p = scan.points[i];
         Eigen::Vector2d pp = R * point2eigen(p) + state.t;
-        cv:Point2f ppp(pp(0), pp(1));
-        cv::line(cvmap2d, origin, ppp, 1, 8, 0);
+        cv:Point2f ppp(pp(0)/ map2d.info.resolution + map2d.info.origin.position.x, pp(1)/ map2d.info.resolution + map2d.info.origin.position.y);
+        
+        cout << "p: " << ppp << endl;
+        cv::line(cvmap2d, origin, ppp, 100, 1, 8, 0);
     }
     cvmap2map();
 }
@@ -274,5 +277,7 @@ void slam2d::cvmap2map()
             map2d.data[i * map2d.info.width + j] = cvmap2d.at<int8_t>(i, j);
         }
     }
+    imshow("cvmap2d", cvmap2d);
+    waitKey(2);
 }
 #endif
