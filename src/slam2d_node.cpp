@@ -18,13 +18,8 @@ ros::Publisher pub_map2d;
 void publish_pose(slam2d &slam);
 void publish_map2d(slam2d &slam);
 
-
-void multiecho_laserscan_callback(const sensor_msgs::MultiEchoLaserScanConstPtr &msg)
+void multiecho2laserscan(const sensor_msgs::MultiEchoLaserScanConstPtr &msg)
 {
-    slam.update(msg);
-    publish_pose(slam);
-    publish_map2d(slam);
-
     //publish laserscan
     sensor_msgs::LaserScan laserscan;
     laserscan.header.stamp = msg->header.stamp;
@@ -44,6 +39,23 @@ void multiecho_laserscan_callback(const sensor_msgs::MultiEchoLaserScanConstPtr 
         laserscan.intensities[i] = msg->intensities[i].echoes[0];
     }
     pub_laserscan.publish(laserscan);
+}
+
+void laserscan_callback(const sensor_msgs::LaserScanConstPtr &msg)
+{
+    slam.readin_scan_data(msg);
+    slam.update();
+    publish_pose(slam);
+    publish_map2d(slam);
+}
+
+void multiecho_laserscan_callback(const sensor_msgs::MultiEchoLaserScanConstPtr &msg)
+{
+    slam.readin_scan_data(msg);
+    slam.update();
+    publish_pose(slam);
+    publish_map2d(slam);
+    multiecho2laserscan(msg);
 }
 
 void publish_map2d(slam2d &slam)
@@ -86,12 +98,6 @@ void publish_pose(slam2d &slam)
     tr.transform.rotation.z = pose.pose.orientation.z;
     tr.transform.rotation.w = pose.pose.orientation.w;
     br.sendTransform(tr);
-}
-
-void laserscan_callback(const sensor_msgs::LaserScanConstPtr &msg)
-{
-    slam.update(msg);
-    publish_pose(slam);
 }
 
 int main(int argc, char **argv)

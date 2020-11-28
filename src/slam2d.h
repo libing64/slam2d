@@ -71,8 +71,7 @@ public:
 
     void update_scan_normal();
     void scan_match();
-    void update(const sensor_msgs::MultiEchoLaserScanConstPtr& msg);
-    void update(const sensor_msgs::LaserScanConstPtr &msg);
+    void update();
     void update_transform();
     void update_map();
     void cvmap2map();//convert cv map to map
@@ -223,12 +222,9 @@ void slam2d::update_transform()
     state.t += R * dt_inv;
 }
 
-void slam2d::update(const sensor_msgs::MultiEchoLaserScanConstPtr &msg)
+void slam2d::update()
 {
     static int cnt = 0;
-
-    readin_scan_data(msg);
-
     if (scan.points.size() && scan_prev.points.size())
     {
         scan_match();
@@ -238,28 +234,6 @@ void slam2d::update(const sensor_msgs::MultiEchoLaserScanConstPtr &msg)
             update_map();
         }
 
-    }
-
-    if (scan.points.size())
-    {
-        scan_prev = scan;
-    }
-    cnt++;
-}
-
-void slam2d::update(const sensor_msgs::LaserScanConstPtr &msg)
-{
-    static int cnt = 0;
-    readin_scan_data(msg);
-
-    if (scan.points.size() && scan_prev.points.size())
-    {
-        scan_match();
-        update_transform();
-        if (cnt % 10 == 0)
-        {
-            update_map();
-        }
     }
 
     if (scan.points.size())
