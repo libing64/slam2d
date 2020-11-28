@@ -48,7 +48,30 @@ void multiecho_laserscan_callback(const sensor_msgs::MultiEchoLaserScanConstPtr 
 
 void publish_map2d(slam2d &slam)
 {
+    slam.map2d.header.stamp = ros::Time(slam.timestamp);
     pub_map2d.publish(slam.map2d);
+    // static int cnt = 0;
+    // nav_msgs::OccupancyGrid map2d;
+    // map2d.header.frame_id = "odom";
+    // map2d.info.width = 100;
+    // map2d.info.height = 100;
+    // map2d.info.resolution = 0.1;
+    // map2d.info.origin.orientation.w = 1;
+    // map2d.info.origin.orientation.x = 0;
+    // map2d.info.origin.orientation.y = 0;
+    // map2d.info.origin.orientation.z = 0;
+    // map2d.info.origin.position.x = map2d.info.width / 2;
+    // map2d.info.origin.position.y = map2d.info.height / 2;
+    // map2d.info.origin.position.z = 0;
+    // map2d.data.resize(map2d.info.width * map2d.info.height);
+    // for (auto i = 0; i < map2d.info.height; i++)
+    // {
+    //     for (auto j = 0; j < map2d.info.width; j++)
+    //     {
+    //         map2d.data[i * map2d.info.width + j] = (i * map2d.info.width + j + cnt) % 100;
+    //     }
+    // }
+    //pub_map2d.publish(map2d);
 }
 
 void publish_pose(slam2d &slam)
@@ -105,9 +128,9 @@ int main(int argc, char **argv)
     ros::Subscriber sub_laserscan = nh.subscribe<sensor_msgs::LaserScan>("/scan", 100, laserscan_callback);
 
     pub_laserscan = nh.advertise<sensor_msgs::LaserScan>("/laserscan", 100);
-    pub_pose = nh.advertise<geometry_msgs::PoseStamped>("/est_pose", 10);
-    pub_path = nh.advertise<nav_msgs::Path>("/path", 10);
-    pub_map2d = nh.advertise<nav_msgs::OccupancyGrid>("/map", 10);
+    pub_pose = nh.advertise<geometry_msgs::PoseStamped>("/est_pose", 100);
+    pub_path = nh.advertise<nav_msgs::Path>("/path", 100);
+    pub_map2d = nh.advertise<nav_msgs::OccupancyGrid>("/map", 100);
     ros::spin();
     return 0;
 }

@@ -81,33 +81,26 @@ slam2d::slam2d()
     state.t = Vector2d::Zero();
     state.theta = 0;
     map2d.header.frame_id = "odom";
-    map2d.info.width = 1000;
-    map2d.info.height = 1000;
-    map2d.info.resolution = 0.05;
+    map2d.info.width = 500;
+    map2d.info.height = 500;
+    map2d.info.resolution = 0.1;
     map2d.info.origin.orientation.w = 1;
     map2d.info.origin.orientation.x = 0;
     map2d.info.origin.orientation.y = 0;
     map2d.info.origin.orientation.z = 0;
-    map2d.info.origin.position.x = map2d.info.width /  2;
-    map2d.info.origin.position.y = map2d.info.height / 2;
+    map2d.info.origin.position.x = map2d.info.width /  2 * map2d.info.resolution;
+    map2d.info.origin.position.y = map2d.info.height / 2 * map2d.info.resolution;
     map2d.info.origin.position.z = 0;
     map2d.data.resize(map2d.info.width * map2d.info.height);
-    for (auto i = 0; i < map2d.info.height; i++)
-    {
-        for(auto j = 0; j < map2d.info.width; j++)
-        {
-            map2d.data[i * map2d.info.width + j] = -1;
-        }
-    }
-
-    cvmap2d = Mat(map2d.info.width, map2d.info.height, CV_8SC1, -1);
-    // for (int i = 0; i < cvmap2d.rows; i++)
+    // for (auto i = 0; i < map2d.info.height; i++)
     // {
-    //     for(int j = 0; j < cvmap2d.cols; j++)
+    //     for(auto j = 0; j < map2d.info.width; j++)
     //     {
-    //         cvmap2d.data
+    //         map2d.data[i * map2d.info.width + j] = -1;
     //     }
     // }
+    cvmap2d = Mat(map2d.info.width, map2d.info.height, CV_8SC1, -1);
+    cvmap2map();
 }
 
 slam2d::~slam2d()
@@ -228,19 +221,26 @@ void slam2d::update_transform()
 
 void slam2d::update(const sensor_msgs::MultiEchoLaserScanConstPtr &msg)
 {
+    static int cnt = 0;
+
     readin_scan_data(msg);
 
     if (scan.points.size() && scan_prev.points.size())
     {
         scan_match();
         update_transform();
-        update_map();
+        if (cnt % 10 == 0)
+        {
+            update_map();
+        }
+
     }
 
     if (scan.points.size())
     {
         scan_prev = scan;
     }
+    cnt++;
 }
 
 void slam2d::update(const sensor_msgs::LaserScanConstPtr &msg)
@@ -251,19 +251,24 @@ void slam2d::update(const sensor_msgs::LaserScanConstPtr &msg)
 void slam2d::update_map()
 {
     //update map with scan and state
-    cv::Point2f origin(state.t(0) / map2d.info.resolution + map2d.info.origin.position.x, state.t(1) / map2d.info.resolution + map2d.info.origin.position.y);
-    cout << "origin: " << origin << endl;
+    int offsetx = cvmap2d.cols / 2;
+    int offsety = cvmap2d.rows / 2;
+    cv::Point2f origin(state.t(0) / map2d.info.resolution + offsetx, state.t(1) / map2d.info.resolution + offsety);
+    //cout << "origin: " << origin << endl;
     Eigen::Matrix2d R;
     R(0, 0) = cos(state.theta); R(0, 1) = -sin(state.theta);
     R(1, 0) = sin(state.theta); R(1, 1) =  cos(state.theta);
     for (int i = 0; i < scan.points.size(); i++)
     {
         PointType p = scan.points[i];
+        float dist = sqrtf(p.x * p.x + p.y * p.y);
+        if (dist > 10) continue;
         Eigen::Vector2d pp = R * point2eigen(p) + state.t;
-        cv:Point2f ppp(pp(0)/ map2d.info.resolution + map2d.info.origin.position.x, pp(1)/ map2d.info.resolution + map2d.info.origin.position.y);
+        cv:Point2f ppp(pp(0)/ map2d.info.resolution + offsetx, pp(1)/ map2d.info.resolution + offsety);
         
-        cout << "p: " << ppp << endl;
+        //cout << "p: " << ppp << endl;
         cv::line(cvmap2d, origin, ppp, 100, 1, 8, 0);
+        cv::circle(cvmap2d, ppp, 1, 0, 1, 8, 0);
     }
     cvmap2map();
 }
@@ -279,5 +284,13 @@ void slam2d::cvmap2map()
     }
     imshow("cvmap2d", cvmap2d);
     waitKey(2);
+
+    // for (int i = 0; i < cvmap2d.rows; i++)
+    // {
+    //     for (int j = 0; j < cvmap2d.cols; j++)
+    //     {
+    //         map2d.data[i * map2d.info.width + j] = i % 100;
+    //     }
+    // }
 }
 #endif
