@@ -94,13 +94,6 @@ slam2d::slam2d()
     map2d.info.origin.position.y = -0.5 * map2d.info.height * map2d.info.resolution;
     map2d.info.origin.position.z = 0;
     map2d.data.resize(map2d.info.width * map2d.info.height);
-    // for (auto i = 0; i < map2d.info.height; i++)
-    // {
-    //     for(auto j = 0; j < map2d.info.width; j++)
-    //     {
-    //         map2d.data[i * map2d.info.width + j] = -1;
-    //     }
-    // }
     cvmap2d = Mat(map2d.info.width, map2d.info.height, CV_8SC1, -1);
     cvmap2map();
 }
@@ -115,12 +108,10 @@ void slam2d::readin_scan_data(const sensor_msgs::MultiEchoLaserScanConstPtr &msg
     scan.points.resize(msg->ranges.size());
     for (auto i = 0; i < msg->ranges.size(); i++)
     {
-        //scan.points[i]
         float dist = msg->ranges[i].echoes[0]; //only first echo used for slam2d
         float theta = msg->angle_min + i * msg->angle_increment;
         scan.points[i].x = dist * cos(theta);
         scan.points[i].y = dist * sin(theta);
-        //printf("%f,", scan[i]);
     }
     scan.width = scan.points.size();
     scan.height = 1;
@@ -128,7 +119,18 @@ void slam2d::readin_scan_data(const sensor_msgs::MultiEchoLaserScanConstPtr &msg
 }
 void slam2d::readin_scan_data(const sensor_msgs::LaserScanConstPtr &msg)
 {
-
+    timestamp = msg->header.stamp.toSec();
+    scan.points.resize(msg->ranges.size());
+    for (auto i = 0; i < msg->ranges.size(); i++)
+    {
+        float dist = msg->ranges[i]; //only first echo used for slam2d
+        float theta = msg->angle_min + i * msg->angle_increment;
+        scan.points[i].x = dist * cos(theta);
+        scan.points[i].y = dist * sin(theta);
+    }
+    scan.width = scan.points.size();
+    scan.height = 1;
+    scan.is_dense = true;
 }
 
 void slam2d::update_scan_normal()
@@ -247,7 +249,24 @@ void slam2d::update(const sensor_msgs::MultiEchoLaserScanConstPtr &msg)
 
 void slam2d::update(const sensor_msgs::LaserScanConstPtr &msg)
 {
+    static int cnt = 0;
     readin_scan_data(msg);
+
+    if (scan.points.size() && scan_prev.points.size())
+    {
+        scan_match();
+        update_transform();
+        if (cnt % 10 == 0)
+        {
+            update_map();
+        }
+    }
+
+    if (scan.points.size())
+    {
+        scan_prev = scan;
+    }
+    cnt++;
 }
 
 void slam2d::update_map()
@@ -256,7 +275,6 @@ void slam2d::update_map()
     int offsetx = cvmap2d.cols / 2;
     int offsety = cvmap2d.rows / 2;
     cv::Point2f origin(state.t(0) / map2d.info.resolution + offsetx, state.t(1) / map2d.info.resolution + offsety);
-    //cout << "origin: " << origin << endl;
     Eigen::Matrix2d R;
     R(0, 0) = cos(state.theta); R(0, 1) = -sin(state.theta);
     R(1, 0) = sin(state.theta); R(1, 1) =  cos(state.theta);

@@ -30,7 +30,7 @@ struct lidar_edge_error
     bool operator()(const T *const pose,
                     T *residuals) const
     {
-        // pose 0 
+        // pose[0] = theta
         T pi[2];
         pi[0] = T(p(0));
         pi[1] = T(p(1));
@@ -42,7 +42,7 @@ struct lidar_edge_error
 
         pi_proj[0] = R[0][0] * pi[0] + R[0][1] * pi[1];
         pi_proj[1] = R[1][0] * pi[0] + R[1][1] * pi[1];
-        // pose[3,4,5] are the translation.
+        // pose[1, 2] are the translation.
         pi_proj[0] += pose[1];
         pi_proj[1] += pose[2];
 
