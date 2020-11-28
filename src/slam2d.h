@@ -88,8 +88,8 @@ slam2d::slam2d()
     map2d.info.origin.orientation.x = 0;
     map2d.info.origin.orientation.y = 0;
     map2d.info.origin.orientation.z = 0;
-    map2d.info.origin.position.x = map2d.info.width /  2 * map2d.info.resolution;
-    map2d.info.origin.position.y = map2d.info.height / 2 * map2d.info.resolution;
+    map2d.info.origin.position.x = -0.5 * map2d.info.width * map2d.info.resolution;
+    map2d.info.origin.position.y = -0.5 * map2d.info.height * map2d.info.resolution;
     map2d.info.origin.position.z = 0;
     map2d.data.resize(map2d.info.width * map2d.info.height);
     // for (auto i = 0; i < map2d.info.height; i++)
