@@ -5,8 +5,6 @@
 * map update
 
 ![gif](https://github.com/libing64/slam2d/blob/master/image/slam2d.gif) 
-![slam2d](https://github.com/libing64/slam2d/blob/master/image/slam2d.png) 
-
 
 ## 1.1 scan-to-scan match
 ICP/PLICP method is used for scan-to-scan match, and ceres is used as the nonlinear solver with point-to-line contraints.
