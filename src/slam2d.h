@@ -58,12 +58,10 @@ public:
     double timestamp;
     nav_msgs::OccupancyGrid map2d;
     Mat cvmap2d;
-    Mat cvmap2d_smooth;
 
     pcl::PointCloud<PointType> scan;
     pcl::PointCloud<PointType> scan_prev;
 
-    pcl::PointCloud<PointType> scan_normal;
     bool cvmap_vis_enable = false;
 
 
@@ -73,12 +71,8 @@ public:
     Vector2d world2map(Vector2d p);
     cv::Point2i world2map(cv::Point2f p);
 
-    void update_scan_normal();
     void scan_match();
-    void scan_map_match();
     void scan_map_match_random();
-    void scan_map_match_bruce();
-    VectorXd scan_map_match_cost(Vector3d pose);
     int scan_map_match_score(Vector3d pose);
     void update();
     void update_transform();
@@ -95,7 +89,7 @@ slam2d::slam2d()
     map2d.header.frame_id = "odom";
     map2d.info.width = 2000;
     map2d.info.height = 2000;
-    map2d.info.resolution = 0.1;
+    map2d.info.resolution = 0.15;
     map2d.info.origin.orientation.w = 1;
     map2d.info.origin.orientation.x = 0;
     map2d.info.origin.orientation.y = 0;
@@ -105,7 +99,6 @@ slam2d::slam2d()
     map2d.info.origin.position.z = 0;
     map2d.data.resize(map2d.info.width * map2d.info.height);
     cvmap2d = Mat(map2d.info.width, map2d.info.height, CV_8SC1, -1);
-    cvmap2d_smooth = Mat(map2d.info.width, map2d.info.height, CV_32FC1, 0.0f);
     cvmap2map();
 }
 
@@ -160,22 +153,7 @@ Vector2d slam2d::world2map(Vector2d p)
     m(1) += map2d.info.height * 0.5;
     return m;
 }
-void slam2d::update_scan_normal()
-{
-    //compute normal of scan
-    scan_normal.points.resize(scan.points.size());
-    for (auto i = 1; i < scan.points.size(); i++)
-    {
-        PointType p1 = scan.points[i - 1];
-        PointType p2 = scan.points[i];
 
-        Eigen::Vector2d delta(p1.x - p2.x, p1.y - p2.y);
-        Eigen::Vector2d normal(-delta(1), delta(0));
-        normal /= normal.norm();
-        scan_normal.points[i].x = normal(0);
-        scan_normal.points[i].y = normal(1);
-    }
-}
 void slam2d::scan_match()
 {
     double pose[3] = {0};
@@ -231,48 +209,6 @@ void slam2d::scan_match()
     }
 }
 
-VectorXd slam2d::scan_map_match_cost(Vector3d pose)
-{
-    VectorXd residual = VectorXd::Zero(scan.points.size());
-    Eigen::Matrix2d R;
-    Vector2d t(pose(1), pose(2));
-    double theta = pose(0);
-    R(0, 0) = cos(theta); R(0, 1) = -sin(theta);
-    R(1, 0) = sin(theta); R(1, 1) =  cos(theta);
-    //printf("cols: %d, rows: %d\n", cvmap2d.cols, cvmap2d.rows);
-    for (int i = 0; i < scan.points.size(); i++)
-    {
-        Vector2d p = point2eigen(scan.points[i]);
-        Vector2d pp = world2map(R * p + t);
-        //cout << "pp: " << pp.transpose() << endl;
-        if ((pp(0) <= 1) || (pp(0) >= cvmap2d.cols) || (pp(1) <= 1) || (pp(1) >= cvmap2d.rows))
-        {
-            residual[i] = 0;
-            //printf("res:%f\n", residual[i]);
-        } else 
-        {
-            //get value from map
-            double x = pp(0);
-            double y = pp(1);
-            int x2 = ceil(x);
-            int x1 = x2 - 1;
-            int y2 = ceil(y);
-            int y1 = y2 - 1;
-            float p11 = cvmap2d_smooth.at<float>(y1 * cvmap2d.cols + x1);
-            float p12 = cvmap2d_smooth.at<float>(y1 * cvmap2d.cols + x2);
-            float p21 = cvmap2d_smooth.at<float>(y2 * cvmap2d.cols + x1);
-            float p22 = cvmap2d_smooth.at<float>(y2 * cvmap2d.cols + x2);
-            float p1 = (x - x1) * p12 + (x2 - x) * p11;
-            float p2 = (x - x1) * p22 + (x2 - x) * p21;
-            float ppp = (y - y1) * p2 + (y2 - y) * p1;
-            residual[i] = 100.0 - ppp;
-            //printf("i: %d, res:%f\n", i, residual[i]);
-        }
-    }
-    //generate local map and compute local optimal?
-    return residual;
-}
-
 int slam2d::scan_map_match_score(Vector3d pose)
 {
     int score = 0;
@@ -304,37 +240,6 @@ int slam2d::scan_map_match_score(Vector3d pose)
     }
     //generate local map and compute local optimal?
     return score;
-}
-
-void slam2d::scan_map_match()
-{
-    float eps = 1e-6;
-    Vector3d pose(state.theta, state.t(0), state.t(1));
-
-    VectorXd r = scan_map_match_cost(pose);
-    MatrixXd H = MatrixXd::Zero(scan.points.size(), 3);
-    for(int i = 0; i < 3; i++)
-    {
-        Vector3d pose1 = pose;
-        pose1(i) += eps;
-        VectorXd r1 = scan_map_match_cost(pose1);
-
-        Vector3d pose2 = pose;
-        pose2(i) -= eps;
-        VectorXd r2 = scan_map_match_cost(pose2);
-
-        H.col(i) = (r1 - r2 ) / (2 * eps);
-    }
-    cout << "H: " << H.transpose() << endl;
-    cout << "r: " << r.transpose() << endl;
-    Vector3d dx = (H.transpose() * H).ldlt().solve(H.transpose() * r);
-    cout << "dx: " << dx.transpose() << endl;
-
-    //update to state
-    double mu = 0.5;
-    state.theta += mu * dx(0);
-    //state.t(0)  += mu * dx(1);
-    //state.t(1)  += mu * dx(2);
 }
 
 void slam2d::scan_map_match_random()
@@ -376,11 +281,6 @@ void slam2d::scan_map_match_random()
     state.t = pose.bottomRows(2);
 }
 
-
-
-void slam2d::scan_map_match_bruce()
-{
-}
 void slam2d::update_transform()
 {
 
@@ -480,16 +380,9 @@ void slam2d::update_map()
             return;
 
         bresenham(origin, pt);
-        //cv::line(cvmap2d, origin, pt, 0, 1, 4, 0);            //0->null
         cvmap2d.at<int8_t>(pt.y * cvmap2d.cols + pt.x) = 100; //100->occupancied
-            //cv::circle(cvmap2d, ppp, 1, 0, 1, 4, 0);
     }
     cvmap2map();
-
-    //blured image for scan-map align
-    // Mat map;
-    // cvmap2d.convertTo(map, CV_32FC1);
-    // cv::GaussianBlur(map, cvmap2d_smooth, Size(5, 5), 0);
 }
 
 void slam2d::cvmap2map()
@@ -504,7 +397,6 @@ void slam2d::cvmap2map()
     if (cvmap_vis_enable)
     {
         imshow("cvmap2d", cvmap2d);
-        imshow("cvmap2d_smooth", cvmap2d_smooth);
         waitKey(2);
     }
 }
