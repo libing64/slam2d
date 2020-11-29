@@ -293,7 +293,7 @@ int slam2d::scan_map_match_score(Vector3d pose)
             //get value from map
             int x = round(pp(0));
             int y = round(pp(1));
-            if (cvmap2d.at<int8_t>(y * cvmap2d.cols + x) == 0)
+            if (cvmap2d.at<int8_t>(y * cvmap2d.cols + x) == 100)
             {
                 score++;
             }
@@ -340,16 +340,16 @@ void slam2d::scan_map_match_random()
     Vector3d pose(state.theta, state.t(0), state.t(1));
     double eps = 1e-5;
     //search best mattch
-    int N = 100;
+    int N = 200;
 
     for (int i = 0; i < N; i++)
     {
         //random direction
         Vector3d d = Vector3d::Random();
-        d(0) /= 20.0;
+        d(0) /= 10.0;
         d.normalize();
         double min_len = 0;
-        double max_len = 0.1;
+        double max_len = 0.2;
         //search best len
         while((max_len - min_len) > eps)
         {
@@ -423,6 +423,7 @@ void slam2d::update_map()
     tt.x = state.t(0);
     tt.y = state.t(1);
     cv::Point2i origin = world2map(tt);
+    if (origin.x < 0 || origin.x >= cvmap2d.cols || origin.y < 0 || origin.y >= cvmap2d.rows) return;
     Eigen::Matrix2d R;
     R(0, 0) = cos(state.theta); R(0, 1) = -sin(state.theta);
     R(1, 0) = sin(state.theta); R(1, 1) =  cos(state.theta);
@@ -435,9 +436,12 @@ void slam2d::update_map()
         Point2f ppp(pp(0), pp(1));
 
         cv:Point2i pt = world2map(ppp);
-        cv::line(cvmap2d, origin, ppp, 100, 1, 4, 0);
-        cvmap2d.at<int8_t>(pt.y * cvmap2d.cols + pt.x) = 0;
-        //cv::circle(cvmap2d, ppp, 1, 0, 1, 4, 0);
+
+        if (pt.x < 0 || pt.x >= cvmap2d.cols || pt.y < 0 || pt.y >= cvmap2d.rows)
+            return;
+        //cv::line(cvmap2d, origin, pt, 0, 1, 4, 0);            //0->null
+        cvmap2d.at<int8_t>(pt.y * cvmap2d.cols + pt.x) = 100; //100->occupancied
+            //cv::circle(cvmap2d, ppp, 1, 0, 1, 4, 0);
     }
     cvmap2map();
 
