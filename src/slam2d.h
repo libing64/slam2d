@@ -82,6 +82,8 @@ public:
     int scan_map_match_score(Vector3d pose);
     void update();
     void update_transform();
+
+    void bresenham(Point2i p1, Point2i p2);
     void update_map();
     void cvmap2map();//convert cv map to map
 };
@@ -416,6 +418,43 @@ void slam2d::update()
     cnt++;
 }
 
+void slam2d::bresenham(Point2i p1, Point2i p2)
+{
+    //drawing a line from p1 to p2
+    int dx = abs(p2.x - p1.x);
+    int sx = (p2.x > p1.x) ? 1 : -1;
+    int dy = abs(p2.y - p1.y);
+    int sy = (p2.y > p1.y) ? 1 : -1;
+    int err = (dx > dy ? dx : dy) / 2;
+    int x1 = p1.x;
+    int y1 = p1.y;
+    int x2 = p2.x;
+    int y2 = p2.y;
+
+    while (x1 != x2 && y1 != y2)
+    {
+        if (cvmap2d.at<int8_t>(y1 * cvmap2d.cols + x1) == 100)
+        {
+            break;
+        }
+        else if (cvmap2d.at<int8_t>(y1 * cvmap2d.cols + x1) == -1)
+        {
+            cvmap2d.at<int8_t>(y1 * cvmap2d.cols + x1) = 0;
+        }
+        int e2 = err;
+        if (e2 > -dx) 
+        {
+            err -= dy;
+            x1 += sx;
+        }
+        if (e2 < dy)
+        {
+            err += dx;
+            y1 += sy;
+        }
+    }
+}
+
 void slam2d::update_map()
 {
     //update map with scan and state
@@ -439,6 +478,8 @@ void slam2d::update_map()
 
         if (pt.x < 0 || pt.x >= cvmap2d.cols || pt.y < 0 || pt.y >= cvmap2d.rows)
             return;
+
+        bresenham(origin, pt);
         //cv::line(cvmap2d, origin, pt, 0, 1, 4, 0);            //0->null
         cvmap2d.at<int8_t>(pt.y * cvmap2d.cols + pt.x) = 100; //100->occupancied
             //cv::circle(cvmap2d, ppp, 1, 0, 1, 4, 0);
