@@ -47,6 +47,7 @@ int main()
                 R(1, 0) = sin(theta); R(1, 1) = cos(theta);
                 meas.delta(0) = state(0, j) - state(0, i);
                 meas.delta.bottomRows(2) = R.transpose() * (state.col(j).bottomRows(2) - state.col(i).bottomRows(2));
+                meas.delta += Vector3d::Random() * 0.01;//add noise
                 meas_q.push_back(meas);
             }
         }
