@@ -166,6 +166,15 @@ include_directories(
 add_executable(slam2d_node  src/slam2d_node.cpp)
 target_link_libraries(slam2d_node ${catkin_LIBRARIES} ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS})
 
+
+# add_executable(scan_map_align_example  utest/scan_map_align_example.cpp)
+# target_link_libraries(scan_map_align_example ${catkin_LIBRARIES} ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS})
+
+
+add_executable(sparse_pose_adjustment_example  utest/sparse_pose_adjustment_example.cpp)
+target_link_libraries(sparse_pose_adjustment_example ${catkin_LIBRARIES} ${CERES_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS})
+
+
 #############
 ## Install ##
 #############
