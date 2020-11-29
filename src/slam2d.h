@@ -58,6 +58,7 @@ public:
     double timestamp;
     nav_msgs::OccupancyGrid map2d;
     Mat cvmap2d;
+    Mat cvmap2d_smooth;
 
     pcl::PointCloud<PointType> scan;
     pcl::PointCloud<PointType> scan_prev;
@@ -70,12 +71,15 @@ public:
     void readin_scan_data(const sensor_msgs::LaserScanConstPtr &msg);
 
     Vector2d world2map(Vector2d p);
-    cv::Point2f world2map(cv::Point2f p);
+    cv::Point2i world2map(cv::Point2f p);
 
     void update_scan_normal();
     void scan_match();
     void scan_map_match();
+    void scan_map_match_random();
+    void scan_map_match_bruce();
     VectorXd scan_map_match_cost(Vector3d pose);
+    int scan_map_match_score(Vector3d pose);
     void update();
     void update_transform();
     void update_map();
@@ -99,6 +103,7 @@ slam2d::slam2d()
     map2d.info.origin.position.z = 0;
     map2d.data.resize(map2d.info.width * map2d.info.height);
     cvmap2d = Mat(map2d.info.width, map2d.info.height, CV_8SC1, -1);
+    cvmap2d_smooth = Mat(map2d.info.width, map2d.info.height, CV_32FC1, 0.0f);
     cvmap2map();
 }
 
@@ -137,13 +142,11 @@ void slam2d::readin_scan_data(const sensor_msgs::LaserScanConstPtr &msg)
     scan.is_dense = true;
 }
 
-cv::Point2f slam2d::world2map(cv::Point2f p)
+cv::Point2i slam2d::world2map(cv::Point2f p)
 {
-    cv::Point2f m;
-    m.x = p.x / map2d.info.resolution;
-    m.y = p.y / map2d.info.resolution;
-    m.x += map2d.info.width * 0.5;
-    m.y += map2d.info.height * 0.5;
+    cv::Point2i m;
+    m.x = roundf(p.x / map2d.info.resolution + map2d.info.width * 0.5);
+    m.y = roundf(p.y / map2d.info.resolution + map2d.info.height * 0.5);
     return m;
 }
 
@@ -230,15 +233,17 @@ VectorXd slam2d::scan_map_match_cost(Vector3d pose)
 {
     VectorXd residual = VectorXd::Zero(scan.points.size());
     Eigen::Matrix2d R;
-    R(0, 0) = cos(state.theta); R(0, 1) = -sin(state.theta);
-    R(1, 0) = sin(state.theta); R(1, 1) =  cos(state.theta);
+    Vector2d t(pose(1), pose(2));
+    double theta = pose(0);
+    R(0, 0) = cos(theta); R(0, 1) = -sin(theta);
+    R(1, 0) = sin(theta); R(1, 1) =  cos(theta);
     //printf("cols: %d, rows: %d\n", cvmap2d.cols, cvmap2d.rows);
     for (int i = 0; i < scan.points.size(); i++)
     {
         Vector2d p = point2eigen(scan.points[i]);
-        Vector2d pp = world2map(R * p + state.t);
+        Vector2d pp = world2map(R * p + t);
         //cout << "pp: " << pp.transpose() << endl;
-        if ((pp(0) <= 0) || (pp(0) >= cvmap2d.cols) || (pp(1) <= 0) || (pp(1) >= cvmap2d.rows))
+        if ((pp(0) <= 1) || (pp(0) >= cvmap2d.cols) || (pp(1) <= 1) || (pp(1) >= cvmap2d.rows))
         {
             residual[i] = 0;
             //printf("res:%f\n", residual[i]);
@@ -251,24 +256,59 @@ VectorXd slam2d::scan_map_match_cost(Vector3d pose)
             int x1 = x2 - 1;
             int y2 = ceil(y);
             int y1 = y2 - 1;
-            float p11 = cvmap2d.at<int8_t>(y1 * cvmap2d.cols + x1);
-            float p12 = cvmap2d.at<int8_t>(y1 * cvmap2d.cols + x2);
-            float p21 = cvmap2d.at<int8_t>(y2 * cvmap2d.cols + x1);
-            float p22 = cvmap2d.at<int8_t>(y2 * cvmap2d.cols + x2);
+            float p11 = cvmap2d_smooth.at<float>(y1 * cvmap2d.cols + x1);
+            float p12 = cvmap2d_smooth.at<float>(y1 * cvmap2d.cols + x2);
+            float p21 = cvmap2d_smooth.at<float>(y2 * cvmap2d.cols + x1);
+            float p22 = cvmap2d_smooth.at<float>(y2 * cvmap2d.cols + x2);
             float p1 = (x - x1) * p12 + (x2 - x) * p11;
             float p2 = (x - x1) * p22 + (x2 - x) * p21;
             float ppp = (y - y1) * p2 + (y2 - y) * p1;
-            residual[i] = 100 - ppp;
+            residual[i] = 100.0 - ppp;
             //printf("i: %d, res:%f\n", i, residual[i]);
         }
     }
+    //generate local map and compute local optimal?
     return residual;
+}
+
+int slam2d::scan_map_match_score(Vector3d pose)
+{
+    int score = 0;
+    Eigen::Matrix2d R;
+    Vector2d t(pose(1), pose(2));
+    double theta = pose(0);
+    R(0, 0) = cos(theta); R(0, 1) = -sin(theta);
+    R(1, 0) = sin(theta); R(1, 1) =  cos(theta);
+    //printf("cols: %d, rows: %d\n", cvmap2d.cols, cvmap2d.rows);
+    for (int i = 0; i < scan.points.size(); i++)
+    {
+        Vector2d p = point2eigen(scan.points[i]);
+        Vector2d pp = world2map(R * p + t);
+        //cout << "pp: " << pp.transpose() << endl;
+        if ((pp(0) <= 1) || (pp(0) >= cvmap2d.cols) || (pp(1) <= 1) || (pp(1) >= cvmap2d.rows))
+        {
+            continue;
+        } else 
+        {
+            //get value from map
+            int x = round(pp(0));
+            int y = round(pp(1));
+            if (cvmap2d.at<int8_t>(y * cvmap2d.cols + x) == 0)
+            {
+                score++;
+            }
+            //printf("i: %d, res:%f\n", i, residual[i]);
+        }
+    }
+    //generate local map and compute local optimal?
+    return score;
 }
 
 void slam2d::scan_map_match()
 {
-    float eps = 1e-2;
+    float eps = 1e-6;
     Vector3d pose(state.theta, state.t(0), state.t(1));
+
     VectorXd r = scan_map_match_cost(pose);
     MatrixXd H = MatrixXd::Zero(scan.points.size(), 3);
     for(int i = 0; i < 3; i++)
@@ -276,18 +316,69 @@ void slam2d::scan_map_match()
         Vector3d pose1 = pose;
         pose1(i) += eps;
         VectorXd r1 = scan_map_match_cost(pose1);
+
         Vector3d pose2 = pose;
         pose2(i) -= eps;
         VectorXd r2 = scan_map_match_cost(pose2);
+
         H.col(i) = (r1 - r2 ) / (2 * eps);
-        //cout << "r1: " << r1.transpose() << endl;
-        //cout << "r2: " << r2.transpose() << endl;
     }
     cout << "H: " << H.transpose() << endl;
+    cout << "r: " << r.transpose() << endl;
     Vector3d dx = (H.transpose() * H).ldlt().solve(H.transpose() * r);
     cout << "dx: " << dx.transpose() << endl;
+
+    //update to state
+    double mu = 0.5;
+    state.theta += mu * dx(0);
+    //state.t(0)  += mu * dx(1);
+    //state.t(1)  += mu * dx(2);
 }
 
+void slam2d::scan_map_match_random()
+{
+    Vector3d pose(state.theta, state.t(0), state.t(1));
+    double eps = 1e-5;
+    //search best mattch
+    int N = 100;
+
+    for (int i = 0; i < N; i++)
+    {
+        //random direction
+        Vector3d d = Vector3d::Random();
+        d(0) /= 20.0;
+        d.normalize();
+        double min_len = 0;
+        double max_len = 0.1;
+        //search best len
+        while((max_len - min_len) > eps)
+        {
+            int score1 = scan_map_match_score(pose + d * min_len);
+            int score2 = scan_map_match_score(pose + d * max_len);
+            if (score1 >= score2)
+            {
+                max_len = (min_len + max_len) / 2.0;
+            } else 
+            {
+                min_len = (min_len + max_len) / 2.0;
+            }
+        }
+        pose += d * min_len;
+        Vector3d dx = d * min_len;
+        int score = scan_map_match_score(pose);
+        printf("score: %d, min_len: %lf\n", score, min_len);
+        cout << "dx: " << dx.transpose() << endl;
+    }
+    //update to state
+    state.theta = pose(0);
+    state.t = pose.bottomRows(2);
+}
+
+
+
+void slam2d::scan_map_match_bruce()
+{
+}
 void slam2d::update_transform()
 {
 
@@ -314,7 +405,7 @@ void slam2d::update()
     {
         scan_match();
         update_transform();
-        //scan_map_match();
+        scan_map_match_random();
         update_map();
     }
 
@@ -331,7 +422,7 @@ void slam2d::update_map()
     cv::Point2f tt;
     tt.x = state.t(0);
     tt.y = state.t(1);
-    cv::Point2f origin = world2map(tt);
+    cv::Point2i origin = world2map(tt);
     Eigen::Matrix2d R;
     R(0, 0) = cos(state.theta); R(0, 1) = -sin(state.theta);
     R(1, 0) = sin(state.theta); R(1, 1) =  cos(state.theta);
@@ -339,14 +430,21 @@ void slam2d::update_map()
     {
         PointType p = scan.points[i];
         float dist = sqrtf(p.x * p.x + p.y * p.y);
-        if (dist > 30) continue;
-        Eigen::Vector2d pp = world2map(R * point2eigen(p) + state.t);
-        cv:Point2f ppp(pp(0), pp(1));
-        
+        if (dist > 20) continue;
+        Eigen::Vector2d pp = R * point2eigen(p) + state.t;
+        Point2f ppp(pp(0), pp(1));
+
+        cv:Point2i pt = world2map(ppp);
         cv::line(cvmap2d, origin, ppp, 100, 1, 4, 0);
-        cv::circle(cvmap2d, ppp, 1, 0, 1, 4, 0);
+        cvmap2d.at<int8_t>(pt.y * cvmap2d.cols + pt.x) = 0;
+        //cv::circle(cvmap2d, ppp, 1, 0, 1, 4, 0);
     }
     cvmap2map();
+
+    //blured image for scan-map align
+    // Mat map;
+    // cvmap2d.convertTo(map, CV_32FC1);
+    // cv::GaussianBlur(map, cvmap2d_smooth, Size(5, 5), 0);
 }
 
 void slam2d::cvmap2map()
@@ -361,6 +459,7 @@ void slam2d::cvmap2map()
     if (cvmap_vis_enable)
     {
         imshow("cvmap2d", cvmap2d);
+        imshow("cvmap2d_smooth", cvmap2d_smooth);
         waitKey(2);
     }
 }
