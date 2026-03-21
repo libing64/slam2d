@@ -15,6 +15,7 @@
 #include <sensor_msgs/MultiEchoLaserScan.h>
 
 #include "slam2d_pose_graph.h"
+#include "voxel_map.h"
 
 using namespace std;
 using namespace Eigen;
@@ -52,7 +53,7 @@ class slam2d {
   state2d delta;
   double timestamp;
   nav_msgs::OccupancyGrid map2d;
-  Mat cvmap2d;
+  VoxelMap2D voxel_map;
 
   pcl::PointCloud<PointType> scan;
   pcl::PointCloud<PointType> scan_prev;
@@ -66,44 +67,40 @@ class slam2d {
   cv::Point2i world2map(cv::Point2f p);
 
   void scan_match();
+  void scan_map_match_b2b();
   void scan_map_match_random();
-  int scan_map_match_score(Vector3d pose);
+  float scan_map_match_score(Vector3d pose);
   void update();
   void update_transform();
 
-  void bresenham(Point2i p1, Point2i p2);
   void update_map();
-  void cvmap2map();  // convert cv map to map
+  void voxel2rosmap();  // convert voxel map to ros map
 };
 
-slam2d::slam2d() {
+slam2d::slam2d() : voxel_map(2000, 2000, 0.15) {
   state.t = Vector2d::Zero();
   state.theta = 0;
   map2d.header.frame_id = "odom";
-  map2d.info.width = 2000;
-  map2d.info.height = 2000;
-  map2d.info.resolution = 0.15;
+  map2d.info.width = voxel_map.width;
+  map2d.info.height = voxel_map.height;
+  map2d.info.resolution = voxel_map.resolution;
   map2d.info.origin.orientation.w = 1;
   map2d.info.origin.orientation.x = 0;
   map2d.info.origin.orientation.y = 0;
   map2d.info.origin.orientation.z = 0;
-  map2d.info.origin.position.x =
-      -0.5 * map2d.info.width * map2d.info.resolution;
-  map2d.info.origin.position.y =
-      -0.5 * map2d.info.height * map2d.info.resolution;
+  map2d.info.origin.position.x = voxel_map.origin_offset.x();
+  map2d.info.origin.position.y = voxel_map.origin_offset.y();
   map2d.info.origin.position.z = 0;
-  map2d.data.resize(map2d.info.width * map2d.info.height);
-  cvmap2d = Mat(map2d.info.width, map2d.info.height, CV_8SC1, -1);
-  cvmap2map();
+  map2d.data.resize(map2d.info.width * map2d.info.height, -1);
+  voxel2rosmap();
 }
 
 slam2d::~slam2d() {}
 
-void slam2d::readin_scan_data(
-    const sensor_msgs::MultiEchoLaserScanConstPtr& msg) {
+void slam2d::readin_scan_data(const sensor_msgs::MultiEchoLaserScanConstPtr& msg) {
   timestamp = msg->header.stamp.toSec();
   scan.points.resize(msg->ranges.size());
-  for (auto i = 0; i < msg->ranges.size(); i++) {
+  for (size_t i = 0; i < msg->ranges.size(); i++) {
     float dist = msg->ranges[i].echoes[0];  // only first echo used for slam2d
     float theta = msg->angle_min + i * msg->angle_increment;
     scan.points[i].x = dist * cos(theta);
@@ -116,7 +113,7 @@ void slam2d::readin_scan_data(
 void slam2d::readin_scan_data(const sensor_msgs::LaserScanConstPtr& msg) {
   timestamp = msg->header.stamp.toSec();
   scan.points.resize(msg->ranges.size());
-  for (auto i = 0; i < msg->ranges.size(); i++) {
+  for (size_t i = 0; i < msg->ranges.size(); i++) {
     float dist = msg->ranges[i];  // only first echo used for slam2d
     float theta = msg->angle_min + i * msg->angle_increment;
     scan.points[i].x = dist * cos(theta);
@@ -194,8 +191,8 @@ void slam2d::scan_match() {
   }
 }
 
-int slam2d::scan_map_match_score(Vector3d pose) {
-  int score = 0;
+float slam2d::scan_map_match_score(Vector3d pose) {
+  float score = 0;
   Eigen::Matrix2d R;
   Vector2d t(pose(1), pose(2));
   double theta = pose(0);
@@ -203,26 +200,25 @@ int slam2d::scan_map_match_score(Vector3d pose) {
   R(0, 1) = -sin(theta);
   R(1, 0) = sin(theta);
   R(1, 1) = cos(theta);
-  // printf("cols: %d, rows: %d\n", cvmap2d.cols, cvmap2d.rows);
+
   for (int i = 0; i < scan.points.size(); i++) {
     Vector2d p = point2eigen(scan.points[i]);
-    Vector2d pp = world2map(R * p + t);
-    // cout << "pp: " << pp.transpose() << endl;
-    if ((pp(0) <= 1) || (pp(0) >= cvmap2d.cols) || (pp(1) <= 1) ||
-        (pp(1) >= cvmap2d.rows)) {
-      continue;
-    } else {
-      // get value from map
-      int x = round(pp(0));
-      int y = round(pp(1));
-      if (cvmap2d.at<int8_t>(y * cvmap2d.cols + x) == 100) {
-        score++;
-      }
-      // printf("i: %d, res:%f\n", i, residual[i]);
-    }
+    Vector2d pp = R * p + t;
+    
+    // Use bilinear interpolation for sub-pixel precision mapping
+    score += voxel_map.getProbBilinear(pp);
   }
-  // generate local map and compute local optimal?
   return score;
+}
+
+void slam2d::scan_map_match_b2b() {
+  BranchAndBoundMatcher b2b_matcher(voxel_map.resolution, 0.05); // 0.05 rad ~ 2.8 deg angular res
+  Vector3d initial_pose(state.theta, state.t(0), state.t(1));
+  Vector3d best_pose = b2b_matcher.match(voxel_map, scan, initial_pose);
+
+  // update to state
+  state.theta = best_pose(0);
+  state.t = best_pose.bottomRows(2);
 }
 
 void slam2d::scan_map_match_random() {
@@ -283,7 +279,7 @@ void slam2d::update() {
   if (scan.points.size() && scan_prev.points.size()) {
     scan_match();
     update_transform();
-    scan_map_match_random();
+    scan_map_match_b2b();
     update_map();
   }
 
@@ -293,78 +289,60 @@ void slam2d::update() {
   cnt++;
 }
 
-void slam2d::bresenham(Point2i p1, Point2i p2) {
-  // drawing a line from p1 to p2
-  int dx = abs(p2.x - p1.x);
-  int sx = (p2.x > p1.x) ? 1 : -1;
-  int dy = abs(p2.y - p1.y);
-  int sy = (p2.y > p1.y) ? 1 : -1;
-  int err = (dx > dy ? dx : dy) / 2;
-  int x1 = p1.x;
-  int y1 = p1.y;
-  int x2 = p2.x;
-  int y2 = p2.y;
-
-  while (x1 != x2 && y1 != y2) {
-    if (cvmap2d.at<int8_t>(y1 * cvmap2d.cols + x1) == 100) {
-      break;
-    } else if (cvmap2d.at<int8_t>(y1 * cvmap2d.cols + x1) == -1) {
-      cvmap2d.at<int8_t>(y1 * cvmap2d.cols + x1) = 0;
-    }
-    int e2 = err;
-    if (e2 > -dx) {
-      err -= dy;
-      x1 += sx;
-    }
-    if (e2 < dy) {
-      err += dx;
-      y1 += sy;
-    }
-  }
-}
-
 void slam2d::update_map() {
   // update map with scan and state
-  cv::Point2f tt;
-  tt.x = state.t(0);
-  tt.y = state.t(1);
-  cv::Point2i origin = world2map(tt);
-  if (origin.x < 0 || origin.x >= cvmap2d.cols || origin.y < 0 ||
-      origin.y >= cvmap2d.rows)
+  Vector2d origin = state.t;
+  Vector2i origin_idx = voxel_map.worldToMap(origin);
+
+  if (!voxel_map.isInside(origin_idx.x(), origin_idx.y()))
     return;
+    
   Eigen::Matrix2d R;
   R(0, 0) = cos(state.theta);
   R(0, 1) = -sin(state.theta);
   R(1, 0) = sin(state.theta);
   R(1, 1) = cos(state.theta);
-  for (int i = 0; i < scan.points.size(); i++) {
+  
+  for (size_t i = 0; i < scan.points.size(); i++) {
     PointType p = scan.points[i];
     float dist = sqrtf(p.x * p.x + p.y * p.y);
     if (dist > 20) continue;
     Eigen::Vector2d pp = R * point2eigen(p) + state.t;
-    Point2f ppp(pp(0), pp(1));
+    
+    Vector2i pt_idx = voxel_map.worldToMap(pp);
 
-  cv:
-    Point2i pt = world2map(ppp);
+    if (!voxel_map.isInside(pt_idx.x(), pt_idx.y()))
+      continue;
 
-    if (pt.x < 0 || pt.x >= cvmap2d.cols || pt.y < 0 || pt.y >= cvmap2d.rows)
-      return;
-
-    bresenham(origin, pt);
-    cvmap2d.at<int8_t>(pt.y * cvmap2d.cols + pt.x) = 100;  // 100->occupancied
+    voxel_map.bresenham(origin_idx, pt_idx);
   }
-  cvmap2map();
+  voxel2rosmap();
 }
 
-void slam2d::cvmap2map() {
-  for (int i = 0; i < cvmap2d.rows; i++) {
-    for (int j = 0; j < cvmap2d.cols; j++) {
-      map2d.data[i * map2d.info.width + j] = cvmap2d.at<int8_t>(i, j);
+void slam2d::voxel2rosmap() {
+  for (int y = 0; y < voxel_map.height; y++) {
+    for (int x = 0; x < voxel_map.width; x++) {
+      float prob = voxel_map.getProb(x, y);
+      int8_t val = -1; // unknown
+      if (prob > 0.65) val = 100; // occupied
+      else if (prob < 0.45) val = 0; // free
+      
+      map2d.data[y * map2d.info.width + x] = val;
     }
   }
+
   if (cvmap_vis_enable) {
-    imshow("cvmap2d", cvmap2d);
-    waitKey(2);
+    cv::Mat map_img(voxel_map.height, voxel_map.width, CV_8UC1);
+    for (int y = 0; y < voxel_map.height; y++) {
+      for (int x = 0; x < voxel_map.width; x++) {
+        int8_t v = map2d.data[y * map2d.info.width + x];
+        if (v == -1) map_img.at<uint8_t>(y, x) = 127;
+        else if (v == 100) map_img.at<uint8_t>(y, x) = 0;
+        else map_img.at<uint8_t>(y, x) = 255;
+      }
+    }
+    cv::imshow("cvmap2d", map_img);
+    cv::waitKey(2);
   }
 }
 #endif
