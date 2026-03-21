@@ -14,11 +14,10 @@ KNN method of pcl lib is used to find point correspondence
 
 
 ## 1.3 scan-to-map match
-find local optimal with random search
-
+A Branch-and-Bound (B2B) algorithm with a precomputed multi-resolution Grid Pyramid is used for robust global/local scan-to-map matching. Bilinear interpolation provides sub-pixel accuracy during map scoring.
 
 ## 1.4 map update
-OpenCV function line and circle is used to update grid map.
+A custom 2D Voxel Map (Occupancy Grid) is maintained using log-odds. The map is updated using a custom implementation of Bresenham's line algorithm, replacing the previous OpenCV `cv::Mat` approach for improved accuracy and flexibility. Keyframe selection is implemented to reduce drift.
 
 
 ![slam2d](https://github.com/libing64/slam2d/blob/master/image/slam2d.png) 
@@ -59,12 +58,12 @@ https://google-cartographer-ros.readthedocs.io/en/latest/data.html
 * ceres
 
 # 3. TODO
-- [ ] how to reduce the drift
-- [ ] how to improve the mapping accurcy
+- [x] how to reduce the drift (added keyframe selection to update map less frequently)
+- [x] how to improve the mapping accurcy (implemented VoxelMap and B2B, fixed Ceres parameter block size bug)
 - [x] scan-to-map match
-- [ ] keyframe selection to reduce drift
+- [x] keyframe selection to reduce drift (implemented with distance/angle thresholds)
 - [ ] dynamic range 2d map
-- [x] search local optimal
+- [x] search local optimal (Branch-and-Bound matcher)
 - [ ] record gif with byzana-record
 - [ ] sparse pose adjust
 - [ ] loop closure

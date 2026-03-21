@@ -51,6 +51,7 @@ class slam2d {
   ~slam2d();
   state2d state;
   state2d delta;
+  state2d last_keyframe_state;
   double timestamp;
   nav_msgs::OccupancyGrid map2d;
   VoxelMap2D voxel_map;
@@ -80,6 +81,8 @@ class slam2d {
 slam2d::slam2d() : voxel_map(2000, 2000, 0.15) {
   state.t = Vector2d::Zero();
   state.theta = 0;
+  last_keyframe_state.t = Vector2d::Zero();
+  last_keyframe_state.theta = 0;
   map2d.header.frame_id = "odom";
   map2d.info.width = voxel_map.width;
   map2d.info.height = voxel_map.height;
@@ -97,7 +100,8 @@ slam2d::slam2d() : voxel_map(2000, 2000, 0.15) {
 
 slam2d::~slam2d() {}
 
-void slam2d::readin_scan_data(const sensor_msgs::MultiEchoLaserScanConstPtr& msg) {
+void slam2d::readin_scan_data(
+    const sensor_msgs::MultiEchoLaserScanConstPtr& msg) {
   timestamp = msg->header.stamp.toSec();
   scan.points.resize(msg->ranges.size());
   for (size_t i = 0; i < msg->ranges.size(); i++) {
@@ -204,7 +208,7 @@ float slam2d::scan_map_match_score(Vector3d pose) {
   for (int i = 0; i < scan.points.size(); i++) {
     Vector2d p = point2eigen(scan.points[i]);
     Vector2d pp = R * p + t;
-    
+
     // Use bilinear interpolation for sub-pixel precision mapping
     score += voxel_map.getProbBilinear(pp);
   }
@@ -212,7 +216,8 @@ float slam2d::scan_map_match_score(Vector3d pose) {
 }
 
 void slam2d::scan_map_match_b2b() {
-  BranchAndBoundMatcher b2b_matcher(voxel_map.resolution, 0.05); // 0.05 rad ~ 2.8 deg angular res
+  BranchAndBoundMatcher b2b_matcher(voxel_map.resolution,
+                                    0.05);  // 0.05 rad ~ 2.8 deg angular res
   Vector3d initial_pose(state.theta, state.t(0), state.t(1));
   Vector3d best_pose = b2b_matcher.match(voxel_map, scan, initial_pose);
 
@@ -279,7 +284,26 @@ void slam2d::update() {
   if (scan.points.size() && scan_prev.points.size()) {
     scan_match();
     update_transform();
-    scan_map_match_b2b();
+
+    // Keyframe selection to reduce drift
+    double dx = state.t(0) - last_keyframe_state.t(0);
+    double dy = state.t(1) - last_keyframe_state.t(1);
+    double dtheta = state.theta - last_keyframe_state.theta;
+
+    // Normalize dtheta to [-pi, pi]
+    while (dtheta > M_PI) dtheta -= 2 * M_PI;
+    while (dtheta < -M_PI) dtheta += 2 * M_PI;
+
+    double dist = sqrt(dx * dx + dy * dy);
+
+    if (dist > 2.0 || fabs(dtheta) > 0.3) {
+      scan_map_match_b2b();
+      update_map();
+      last_keyframe_state = state;
+    }
+  } else if (scan.points.size() && !scan_prev.points.size()) {
+    // First frame initialization
+    last_keyframe_state = state;
     update_map();
   }
 
@@ -294,25 +318,23 @@ void slam2d::update_map() {
   Vector2d origin = state.t;
   Vector2i origin_idx = voxel_map.worldToMap(origin);
 
-  if (!voxel_map.isInside(origin_idx.x(), origin_idx.y()))
-    return;
-    
+  if (!voxel_map.isInside(origin_idx.x(), origin_idx.y())) return;
+
   Eigen::Matrix2d R;
   R(0, 0) = cos(state.theta);
   R(0, 1) = -sin(state.theta);
   R(1, 0) = sin(state.theta);
   R(1, 1) = cos(state.theta);
-  
+
   for (size_t i = 0; i < scan.points.size(); i++) {
     PointType p = scan.points[i];
     float dist = sqrtf(p.x * p.x + p.y * p.y);
     if (dist > 20) continue;
     Eigen::Vector2d pp = R * point2eigen(p) + state.t;
-    
+
     Vector2i pt_idx = voxel_map.worldToMap(pp);
 
-    if (!voxel_map.isInside(pt_idx.x(), pt_idx.y()))
-      continue;
+    if (!voxel_map.isInside(pt_idx.x(), pt_idx.y())) continue;
 
     voxel_map.bresenham(origin_idx, pt_idx);
   }
@@ -323,10 +345,12 @@ void slam2d::voxel2rosmap() {
   for (int y = 0; y < voxel_map.height; y++) {
     for (int x = 0; x < voxel_map.width; x++) {
       float prob = voxel_map.getProb(x, y);
-      int8_t val = -1; // unknown
-      if (prob > 0.65) val = 100; // occupied
-      else if (prob < 0.45) val = 0; // free
-      
+      int8_t val = -1;  // unknown
+      if (prob > 0.65)
+        val = 100;  // occupied
+      else if (prob < 0.45)
+        val = 0;  // free
+
       map2d.data[y * map2d.info.width + x] = val;
     }
   }
@@ -336,9 +360,12 @@ void slam2d::voxel2rosmap() {
     for (int y = 0; y < voxel_map.height; y++) {
       for (int x = 0; x < voxel_map.width; x++) {
         int8_t v = map2d.data[y * map2d.info.width + x];
-        if (v == -1) map_img.at<uint8_t>(y, x) = 127;
-        else if (v == 100) map_img.at<uint8_t>(y, x) = 0;
-        else map_img.at<uint8_t>(y, x) = 255;
+        if (v == -1)
+          map_img.at<uint8_t>(y, x) = 127;
+        else if (v == 100)
+          map_img.at<uint8_t>(y, x) = 0;
+        else
+          map_img.at<uint8_t>(y, x) = 255;
       }
     }
     cv::imshow("cvmap2d", map_img);

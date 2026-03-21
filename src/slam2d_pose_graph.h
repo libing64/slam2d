@@ -71,7 +71,7 @@ struct lidar_edge_error {
   static ceres::CostFunction* Create(const Eigen::Vector2d p,
                                      const Eigen::Vector2d p1,
                                      const Eigen::Vector2d p2) {
-    return (new ceres::AutoDiffCostFunction<lidar_edge_error, 1, 6>(
+    return (new ceres::AutoDiffCostFunction<lidar_edge_error, 1, 3>(
         new lidar_edge_error(p, p1, p2)));
   }
 
